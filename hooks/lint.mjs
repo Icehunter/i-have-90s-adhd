@@ -36,7 +36,7 @@ const lastPrompt = prompts.length ? prompts[prompts.length - 1] : -1;
 // "explain" exemption: each match counts unless negated right before it; short follow-ups inherit.
 // A negator cancels the match only when just filler words sit between them
 // ("no explanation", "don't bother explaining"), so "don't fix it, just explain" still counts.
-const NEG = /\b(no|not|don'?t|dont|never|stop|skip|without)\s+((need|want|bother|have|going|gonna|try|to|the|an?|any|more|long|further|me|with|for)\s+)*$/;
+const NEG = /\b(no|not|don'?t|dont|never|stop|skip|without)\s+((need|want|bother|have|going|gonna|try|to|the|an?|any|more|long|further|me|you|with|for)\s+)*$/;
 const wantsExplain = t => {
   for (const m of t.matchAll(/\b(explain(ing)?|explanation|walk me through)\b/g)) {
     const pre = t.slice(Math.max(0, m.index - 30), m.index);
@@ -92,7 +92,8 @@ const NEXT = /^([\s*_>#-]|\d+[.)])*next\b[^:\n]{0,20}:/i;
 // a path or command (`tests/run.mjs` OK, 3/3 pass) is not mistaken for one starting with "OK".
 const proseX = stripFences(last).replace(/`[^`\n]*`/g, 'x')
   .split('\n').filter(l => !/^\s*\|/.test(l)).join('\n').trim();
-const lead = norm(proseX).replace(/^([\s*_>#+-]|\d+[.)]\s)+/, '');
+// A closing ** or __ right after the first word ("**Sure**, done.") is dropped so the opener regex sees the bare word.
+const lead = norm(proseX).replace(/^([\s*_>#+-]|\d+[.)]\s)+/, '').replace(/^([\p{L}']+[.!,]?)[*_]+(?![\p{L}\d])/u, '$1');
 // Closer check runs on the last line with letters that is not the "Next:" line.
 const lastLine = prose.split('\n').map(s => s.trim()).filter(s => /\p{L}/u.test(s) && !NEXT.test(s)).pop() || '';
 // A sentence after the first on the Next: line can still be a closer ("Next: push. Let me know if CI fails.").
@@ -102,7 +103,7 @@ const nextTail = nextLine.split(/(?<=[.!?])\s+/).slice(1);
 const problems = [];
 if (/^((great|sure|certainly|absolutely|okay|ok|alright|perfect|excellent|got it)(?=\s*([!,—–]|\.(\s|$))|\s+-\s|\s*\n|\s*$)|sure thing|great (question|idea|point)|of course(?=\s*[!,.—–]|\s*$)|let me|i'll|i will|to answer (your|the) question|happy to|thanks(?!\s+to\b)|thank you|i'm going to|let's(?!\s+encrypt\b)|you're (absolutely |totally )?right|(okay|ok|alright),?\s+(so(?!\s+far\b)|i(?![/-])|i've|here)\b|good (catch|call|question|idea|point)|no problem(?=\s*[!,.—–]|\s*$)|(now|first),? (let me|i'll))\b/i.test(lead)) problems.push('preamble opener');
 // Phrase must start the line or follow a sentence/clause break, so mid-sentence mentions pass.
-const CLOSER = /(^|[.!?,;:—–-]\s+|\band\s+)[\s*_>-]{0,8}((if [^.!?\n]{0,60}?[\s,]+)|((i|we|please|just|and|so|then|but|or|otherwise)\s+)){0,2}(let me know|hope (this|that|it) help(s|ed)|don'?t hesitate to|feel free to (ask|reach|ping|contact)|happy to (help|clarify)|lmk\b|just ask(?=\s*([.!?]|$)|\s+(me|away|if)\b))/i;
+const CLOSER = /(^|[.!?,;:—–-]\s+|\band\s+)[\s*_>(-]{0,8}((if [^.!?\n]{0,60}?[\s,]+)|((i|we|please|just|and|so|then|but|or|otherwise)\s+)){0,2}(let me know|hope (this|that|it) help(s|ed)|don'?t hesitate to|feel free to (ask|reach|ping|contact)|happy to (help|clarify)|lmk\b|just ask(?=\s*([.!?]|$)|\s+away\b|\s+(me\s+)?if\b|\s+me\s*([.!?]|$)))/i;
 // "anything else?" only counts as a sentence of its own, so "..., or anything else?" (a real question) passes.
 const ASKELSE = /(^|[.!?]\s+)(is there\s+anything else(\s+(i|we)\s+(can|could|should|might)\b[^?\n]*)?\s*\?|anything else\s*\?\s*$)/i;
 // Sign-offs only count when they are the whole last line.

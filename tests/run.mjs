@@ -215,6 +215,19 @@ t('"No problem in file" error report ok', lint([U('x'), A('No problem in lint.mj
 t('"No problem." blocks', lint([U('x'), A('No problem. Fixed a.js:3.')]), true);
 t('Sure — dash opener blocks', lint([U('x'), A('Sure — done.')]), true);
 
+t('**Sure**, opener blocks', lint([U('x'), A('**Sure**, done.')]), true);
+t('**Sure.** opener blocks', lint([U('x'), A('**Sure.** Done.')]), true);
+t('__Sure__! opener blocks', lint([U('x'), A('__Sure__! Done.')]), true);
+t('bold non-opener passes', lint([U('x'), A('**Sure_thing.js** fixed.')]), false);
+t('"just ask me before" instruction passes', lint([U('x'), A('Port 3000 busy. Just ask me before killing it.')]), false);
+t('"just ask me." closer blocks', lint([U('x'), A('Fixed a.js:3. Just ask me.')]), true);
+t('"just ask me if" closer blocks', lint([U('x'), A('Fixed a.js:3. Just ask me if it breaks.')]), true);
+const LONG = Array.from({ length: 100 }, (_, i) => `word${i}`).join(' ');
+t("don't want you to explain: cap applies", lint([U("I don't want you to explain, just fix it"), A(LONG)]), true);
+t("don't need you to explain: cap applies", lint([U("I don't need you to explain, just fix it"), A(LONG)]), true);
+t('plain explain still lifts cap', lint([U('please explain this'), A(LONG)]), false);
+t('parenthesized closer blocks', lint([U('x'), A('Fixed.\n(let me know if you need more)')]), true);
+
 // off switch
 t('inject on', inj('hi').includes('ADHD+90s'), true);
 t('inject scopes style to final reply only', inj('hi', 's-scope').includes('final chat reply'), true);

@@ -8,11 +8,12 @@ if (input.stop_hook_active) process.exit(0); // one retry max, no loops
 if (isOff(input.session_id)) process.exit(0);
 
 // Parse per line: one bad (or null) line must not disable the lint.
+// Sidechain (subagent) entries are skipped: they are not the main conversation.
 const lines = [];
 try {
   for (const l of readFileSync(input.transcript_path, 'utf8').replace(/^﻿/, '').split('\n')) {
     if (!l.trim()) continue;
-    try { const v = JSON.parse(l); if (v && typeof v === 'object') lines.push(v); } catch {}
+    try { const v = JSON.parse(l); if (v && typeof v === 'object' && !v.isSidechain) lines.push(v); } catch {}
   }
 } catch { /* no transcript: fall back to last_assistant_message only */ }
 
@@ -101,13 +102,15 @@ const nextLine = prose.split('\n').map(s => s.trim()).filter(s => NEXT.test(s)).
 const nextTail = nextLine.split(/(?<=[.!?])\s+/).slice(1);
 
 const problems = [];
-if (/^((great|sure|certainly|absolutely|okay|ok|alright|perfect|excellent|got it)(?=\s*([!,—–]|\.(\s|$))|\s+-\s|\s*\n|\s*$)|sure thing|great (question|idea|point)|of course(?=\s*[!,.—–]|\s*$)|let me|i'll|i will|to answer (your|the) question|happy to|thanks(?!\s+to\b)|thank you|i'm going to|let's(?!\s+encrypt\b)|you're (absolutely |totally )?right|(okay|ok|alright),?\s+(so(?!\s+far\b)|i(?![/-])|i've|here)\b|good (catch|call|question|idea|point)|no problem(?=\s*[!,.—–]|\s*$)|(now|first),? (let me|i'll))\b/i.test(lead)) problems.push('preamble opener');
+if (/^((great|sure|certainly|absolutely|okay|ok|alright|perfect|excellent|got it)(?=\s*([!,—–]|\.(\s|$))|\s+-\s|\s*\n|\s*$)|sure thing|great (question|idea|point|catch|find)|nice (catch|find)|of course(?=\s*[!,.—–]|\s*$)|let me|i'll|i will|to answer (your|the) question|happy to|thanks(?!\s+to\b)|thank you|i'm going to|let's(?!\s+encrypt\b)|you're (absolutely |totally )?right|(okay|ok|alright),?\s+(so(?!\s+far\b)|i(?![/-])|i've|here)\b|good (catch|call|question|idea|point)|no problem(?=\s*[!,.—–]|\s*$)|(now|first),? (let me|i'll))\b/i.test(lead)) problems.push('preamble opener');
 // Phrase must start the line or follow a sentence/clause break, so mid-sentence mentions pass.
-const CLOSER = /(^|[.!?,;:—–-]\s+|\band\s+)[\s*_>(-]{0,8}((if [^.!?\n]{0,60}?[\s,]+)|((i|we|please|just|and|so|then|but|or|otherwise)\s+)){0,2}(let me know|hope (this|that|it) help(s|ed)|don'?t hesitate to|feel free to (ask|reach|ping|contact)|happy to (help|clarify)|lmk\b|just ask(?=\s*([.!?]|$)|\s+away\b|\s+(me\s+)?if\b|\s+me\s*([.!?]|$)))/i;
+const CLOSER = /(^|[.!?,;:—–-]\s+|\band\s+)[\s*_>(-]{0,8}((if [^.!?\n]{0,60}?[\s,]+)|((i|we|please|just|and|so|then|but|or|otherwise)\s+)){0,2}(let me know|hope(fully)? (this|that|it) (help(s|ed)|clears|makes|is (helpful|useful))|don'?t hesitate to|feel free to (ask|reach|ping|contact)(?=\s*([.!?]|$)|\s+(me|us|away|out|if|any|more|questions?)\b)|happy to (help|clarify)|glad (i could|to) help|(shout|reach out) if\b|lmk\b|just ask(?=\s*([.!?]|$)|\s+away\b|\s+(me\s+)?if\b|\s+me\s*([.!?]|$)))/i;
 // "anything else?" only counts as a sentence of its own, so "..., or anything else?" (a real question) passes.
-const ASKELSE = /(^|[.!?]\s+)(is there\s+anything else(\s+(i|we)\s+(can|could|should|might)\b[^?\n]*)?\s*\?|anything else\s*\?\s*$)/i;
+const ASKELSE = /(^|[.!?]\s+)(is there\s+anything else(\s+(i|we)\s+(can|could|should|might)\b[^?\n]*)?\s*\?|(need )?anything else\s*\?\s*$)/i;
+// Offers of extra work ("Would you like me to add tests too?") close the reply. A plain "Want me to overwrite it?" is a real confirmation, so it passes.
+const OFFER = /(^|[.!?]\s+)(would you like me to|(want me to|shall i|should i)\b[^?\n]*?\b(too|also|as well)\b)[^?\n]*\?\s*$/i;
 // Sign-offs only count when they are the whole last line.
-if ([lastLine, ...nextTail].some(s => CLOSER.test(s) || ASKELSE.test(s)) || /^\W*(happy (coding|hacking)|cheers|good luck)\W*$/i.test(lastLine)) problems.push('closer');
+if ([lastLine, ...nextTail].some(s => CLOSER.test(s) || ASKELSE.test(s) || OFFER.test(s)) || /^\W*(happy (coding|hacking)|cheers|good luck)\W*$/i.test(lastLine)) problems.push('closer');
 const words = prose.split(/\s+/).filter(w => /\p{L}/u.test(w)).length;
 if (!explain && words > 80) problems.push(`${words} words, cap is 80`);
 

@@ -33,8 +33,8 @@ export function stripTags(s) {
 }
 
 // The whole message must be the phrase, so ordinary sentences never trigger it.
-export const OFF_RE = /^\W*(stop adhd mode|normal mode)\W*$/i;
-export const ON_RE = /^\W*adhd mode on\W*$/i;
+export const OFF_RE = /^\W*(stop\s+adhd\s+mode|normal\s+mode)\W*$/i;
+export const ON_RE = /^\W*adhd\s+mode\s+on\W*$/i;
 
 const key = sid => String(sid || '').replace(/[^\w-]/g, '');
 

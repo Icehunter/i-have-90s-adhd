@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,7 +21,13 @@ const A = t => JSON.stringify({ type: 'assistant', message: { content: [{ type: 
 const lint = (rows, extra = {}) => {
   const p = join(home, `t${n++}.jsonl`);
   writeFileSync(p, rows.join('\n') + '\n');
-  return run('lint.mjs', { transcript_path: p, session_id: 's1', ...extra }).includes('"block"');
+  const out = run('lint.mjs', { transcript_path: p, session_id: 's1', ...extra });
+  if (!out) return false;
+  // Parse the output: a block must be exactly {decision:'block', reason:<string>}.
+  let j;
+  try { j = JSON.parse(out); } catch { fail++; console.log(`FAIL lint output is not JSON: ${out.slice(0, 80)}`); return false; }
+  if (j.decision !== 'block' || typeof j.reason !== 'string' || Object.keys(j).length !== 2) { fail++; console.log(`FAIL lint output has wrong shape: ${out.slice(0, 80)}`); return false; }
+  return true;
 };
 const inj = (prompt, sid = 's1') => run('inject.mjs', { prompt, ...(sid ? { session_id: sid } : {}) }, 'UserPromptSubmit');
 const long = Array(100).fill('word').join(' ');
@@ -228,8 +234,56 @@ t("don't need you to explain: cap applies", lint([U("I don't need you to explain
 t('plain explain still lifts cap', lint([U('please explain this'), A(LONG)]), false);
 t('parenthesized closer blocks', lint([U('x'), A('Fixed.\n(let me know if you need more)')]), true);
 
+// round 14: closers and openers
+for (const r of ['Fixed.\nWould you like me to add tests too?', 'Done.\nWant me to add tests too?', 'Done.\nShall I also bump the version?',
+  'Done.\nHopefully this helps!', 'Done!\nHope this clears things up.', 'Done.\nHope this is helpful!', 'Done.\nNeed anything else?',
+  'Glad I could help!', 'Fixed.\nShout if anything breaks.', 'Fixed.\nReach out if you need anything.', 'Fixed.\nFeel free to reach out.'])
+  t(`closer blocks: ${r.replace(/\n/g, ' / ')}`, lint([U('x'), A(r)]), true);
+for (const r of ['Token is in 1Password; feel free to ask Dana for access.', 'Port busy. Feel free to ping #infra for a new runner.',
+  'Want me to overwrite a.js?', 'Fixed. Should I delete the branch?'])
+  t(`closer-lookalike passes: ${r}`, lint([U('x'), A(r)]), false);
+for (const r of ['Great catch! Fixed.', 'Great find, fixed.', 'Nice catch! Fixed.', 'Great! Done.', 'Certainly! Done.', 'Absolutely! Done.',
+  'Excellent! Done.', 'Alright, done.', 'Happy to help. Done.', 'Thank you! Done.', 'I will fix that.', "I'm going to fix that.",
+  'To answer your question: yes.', 'First, let me check.'])
+  t(`opener blocks: ${r}`, lint([U('x'), A(r)]), true);
+// guards: explain must not outlive its turn, and capitalised explain counts
+t('explain does not carry past an unrelated prompt', lint([U('explain X'), A(long), U('fix it'), A(long)]), true);
+t('"continue" inherits explain', lint([U('explain X'), A(long), U('continue'), A(long)]), false);
+t('capitalised Explain lifts cap', lint([U('Explain this'), A(long)]), false);
+t('tool_result is not a prompt', lint([U('explain X'), A('ok'), JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] } }), A(long)]), false);
+t('tilde fence hides code words', lint([U('x'), A('Done.\n~~~\n' + long + '\n~~~')]), false);
+t('backtick fence is not closed by tildes', lint([U('x'), A('Done.\n```\n' + long + '\n~~~\n' + long + '\n```')]), false);
+t('cap is exactly 80', [lint([U('x'), A(Array(80).fill('w').join(' '))]), lint([U('x'), A(Array(81).fill('w').join(' '))])].join(), 'false,true');
+
 // off switch
 t('inject on', inj('hi').includes('ADHD+90s'), true);
+{
+  const o = JSON.parse(inj('hi', 's-shape'));
+  t('inject output shape', JSON.stringify([Object.keys(o).join(), Object.keys(o.hookSpecificOutput).sort().join(), o.hookSpecificOutput.hookEventName, typeof o.hookSpecificOutput.additionalContext]),
+    JSON.stringify(['hookSpecificOutput', 'additionalContext,hookEventName', 'UserPromptSubmit', 'string']));
+}
+t('off phrase with double space', inj('normal  mode', 's-sp'), '');
+t('stays off after double-space phrase', inj('hi', 's-sp'), '');
+t('on phrase with double space', inj('adhd  mode on', 's-sp').includes('ADHD+90s'), true);
+{
+  // The documented global flag file silences every session.
+  const flag = join(home, '.claude', '.i-have-90s-adhd-off');
+  mkdirSync(join(home, '.claude'), { recursive: true });
+  writeFileSync(flag, '');
+  t('global flag silences inject', inj('hi', 's-global'), '');
+  t('global flag silences lint', lint([U('x'), A('Sure! Done.')]), false);
+  rmSync(flag);
+  t('global flag removed: inject back on', inj('hi', 's-global').includes('ADHD+90s'), true);
+}
+{
+  // Wiring: hooks.json must parse and point at scripts that exist.
+  const cfg = JSON.parse(readFileSync(join(root, 'hooks', 'hooks.json'), 'utf8')).hooks;
+  const scripts = Object.entries(cfg).map(([ev, arr]) => [ev, arr[0].hooks[0].command.match(/hooks\/(\w+\.mjs)/)?.[1]]);
+  t('hooks.json events and scripts', JSON.stringify(scripts), JSON.stringify([['UserPromptSubmit', 'inject.mjs'], ['Stop', 'lint.mjs']]));
+  t('hook scripts exist', scripts.every(([, s]) => s && existsSync(join(root, 'hooks', s))), true);
+  for (const f of ['plugin.json', 'marketplace.json']) t(`${f} parses`, typeof JSON.parse(readFileSync(join(root, '.claude-plugin', f), 'utf8')).name, 'string');
+}
+t('sidechain prompt ignored for explain', lint([U('fix it'), JSON.stringify({ type: 'user', isSidechain: true, message: { content: 'explain the code' } }), A(long)]), true);
 t('inject scopes style to final reply only', inj('hi', 's-scope').includes('final chat reply'), true);
 t('off phrase silences', inj('normal mode.'), '');
 t('stays off next prompt', inj('fix the bug'), '');

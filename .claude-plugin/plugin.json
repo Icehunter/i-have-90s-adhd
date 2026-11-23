@@ -1,0 +1,6 @@
+{
+  "name": "i-have-90s-adhd",
+  "version": "0.1.0",
+  "description": "ADHD-shaped, ultra-terse, 90s-slang replies. Re-injected every prompt and linted on Stop so it actually sticks.",
+  "author": { "name": "Ryan Wilson" }
+}

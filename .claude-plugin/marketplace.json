@@ -1,0 +1,12 @@
+{
+  "name": "i-have-90s-adhd",
+  "owner": { "name": "Ryan Wilson" },
+  "metadata": { "description": "ADHD-shaped, terse, 90s-slang replies for Claude Code, enforced by hooks." },
+  "plugins": [
+    {
+      "name": "i-have-90s-adhd",
+      "source": "./",
+      "description": "ADHD-shaped, ultra-terse replies with light 90s slang. Rules re-injected every prompt and linted on Stop."
+    }
+  ]
+}
